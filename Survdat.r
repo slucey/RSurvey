@@ -17,7 +17,7 @@ use.SAD    <- 'n' # y = grab data from Survey Analysis Database (SAD) for
                   #     assessed species
 #-------------------------------------------------------------------------------
 #Required packages
-library(RODBC); library(data.table); library(here)
+library(DBI); library(odbc); library(data.table); library(here)
 
 #-------------------------------------------------------------------------------
 #Created functions
@@ -35,7 +35,7 @@ sqltext <- function(x){
 
 #-------------------------------------------------------------------------------
 #Begin script
-channel <- odbcConnect('sole', uid, pwd)
+channel <- DBI::dbConnect(odbc::odbc(), dsn = 'sole', uid = uid, pwd = pwd)
 
 #Generate cruise list
 if(all.season == 'n'){
@@ -56,7 +56,7 @@ if(all.season == 'y'){
     order by year, cruise6"
   }
     
-cruise <- as.data.table(sqlQuery(channel, cruise.qry))
+cruise <- as.data.table(DBI::dbGetQuery(channel, cruise.qry))
 cruise <- na.omit(cruise)
 setkey(cruise, CRUISE6, SVVESSEL)
 
@@ -85,8 +85,8 @@ if(shg.check == 'y'){
                           and cruise6 > 200900
                           order by cruise6, station", sep='')
   
-  preHB.sta <- as.data.table(sqlQuery(channel, preHB.station.qry))
-  HB.sta    <- as.data.table(sqlQuery(channel, HB.station.qry))
+  preHB.sta <- as.data.table(DBI::dbGetQuery(channel, preHB.station.qry))
+  HB.sta    <- as.data.table(DBI::dbGetQuery(channel, HB.station.qry))
   station   <- rbindlist(list(preHB.sta, HB.sta))
   }
 
@@ -98,7 +98,7 @@ if(shg.check == 'n'){
                        from UNION_FSCS_SVSTA
                        where cruise6 in (", cruise6, ")
                        order by cruise6, station", sep='')
-  station <- as.data.table(sqlQuery(channel, station.qry))
+  station <- as.data.table(DBI::dbGetQuery(channel, station.qry))
   }
   
 setkey(station, CRUISE6, SVVESSEL)
@@ -115,7 +115,7 @@ catch.qry <- paste("select cruise6, station, stratum, tow, svspp, catchsex,
                    and stratum not like 'YT%'
                    order by cruise6, station, svspp", sep='')
 
-catch <- as.data.table(sqlQuery(channel, catch.qry))
+catch <- as.data.table(DBI::dbGetQuery(channel, catch.qry))
 setkey(catch, CRUISE6, STATION, STRATUM, TOW)
 
 #merge with survdat
@@ -130,7 +130,7 @@ length.qry <- paste("select cruise6, station, stratum, tow, svspp, catchsex,
                     and stratum not like 'YT%'
                     order by cruise6, station, svspp, length", sep='')
 
-len <- as.data.table(sqlQuery(channel, length.qry))
+len <- as.data.table(DBI::dbGetQuery(channel, length.qry))
 setkey(len, CRUISE6, STATION, STRATUM, TOW, SVSPP, CATCHSEX)
 
 #merge with survdat
@@ -150,7 +150,7 @@ survdat[, ABUNDANCE := as.double(ABUNDANCE)]
 convert.qry <- "select *
   from survan_conversion_factors"
 
-convert <- as.data.table(sqlQuery(channel,convert.qry))
+convert <- as.data.table(DBI::dbGetQuery(channel,convert.qry))
 
 #DCF < 1985 Door Conversion
 dcf.spp <- convert[DCF_WT > 0, SVSPP]
@@ -263,7 +263,7 @@ if(use.SAD == 'y'){
   sad.qry <- "select svspp, cruise6, stratum, tow, station, sex as catchsex,
              catch_wt_B_cal, catch_no_B_cal, length, length_no_B_cal
              from STOCKEFF.I_SV_MERGED_CATCH_CALIB_O"
-  sad     <- as.data.table(sqlQuery(channel, sad.qry))
+  sad     <- as.data.table(DBI::dbGetQuery(channel, sad.qry))
   
   setkey(sad, CRUISE6, STRATUM, TOW, STATION, SVSPP, CATCHSEX, LENGTH)
   sad <- unique(sad)
@@ -277,7 +277,7 @@ if(use.SAD == 'y'){
   survdat[, c('CATCH_WT_B_CAL', 'CATCH_NO_B_CAL', 'LENGTH_NO_B_CAL') := NULL]
 }
 
-odbcClose(channel)
+dbDisconnect(channel)
 
 if(all.season == 'n') save(survdat, file = here('data/Survdat.RData'))
 if(all.season == 'y') save(survdat, file = here('data/Survdat_allseason.RData'))
